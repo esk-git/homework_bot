@@ -41,7 +41,7 @@ logger.addHandler(filehandler)
 
 
 def check_tokens():
-    """Проверка доступности переменных окружения"""
+    """Проверка доступности переменных окружения."""
     environment_variables = [
         PRACTICUM_TOKEN,
         TELEGRAM_TOKEN,
@@ -56,19 +56,19 @@ def check_tokens():
 
 
 def send_message(bot, message):
-    """Отправка сообщения в Telegram чат"""
+    """Отправка сообщения в Telegram чат."""
     try:
         logger.debug('Попытка отправить сообщение')
         bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message)
-    except:
-        logger.error('Cбой при отправке сообщения в Telegram')
-        raise MessageError('Ошибка отправки сообщения')
+    except Exception as error:
+        logger.error(f'Cбой при отправке сообщения в Telegram - {error}')
+        raise MessageError(f'Ошибка отправки сообщения - {error}')
     else:
         logger.debug('Сообщение отправленно в telegram')
 
 
 def get_api_answer(timestamp):
-    """Запрос к единственному эндпоинту"""
+    """Запрос к единственному эндпоинту."""
     try:
         logger.info(f'Отправка запроса API {ENDPOINT}, время {timestamp}')
         response = requests.get(
@@ -81,14 +81,13 @@ def get_api_answer(timestamp):
             raise StatusCodeError(f'API недоступен, код ответа: '
                                   f'{response.status_code}'
                                   )
-    except:
-        raise AnswerError('Ошибка при запросе к API')
-    response = response.json()
-    return response
+        return response.json()
+    except Exception as error:
+        raise AnswerError('Ошибка при запросе к API', error)
 
 
 def check_response(response):
-    """Проверка ответа API на соответствие документации"""
+    """Проверка ответа API на соответствие документации."""
     if not isinstance(response, dict):
         raise TypeError('Ответ API не является словарем')
     if 'homeworks' not in response or 'current_date' not in response:
@@ -100,7 +99,7 @@ def check_response(response):
 
 
 def parse_status(homework):
-    """Извлекаем статус работы"""
+    """Извлекаем статус работы."""
     if 'homework_name' not in homework:
         logger.error('Отсутствует имя HW в ответе API')
         raise ParseError('В ответе API домашки нет ключа homework_name')
