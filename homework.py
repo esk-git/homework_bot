@@ -27,9 +27,9 @@ HOMEWORK_VERDICTS = {
     'rejected': 'Работа проверена: у ревьюера есть замечания.'
 }
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
-filehandler = logging.FileHandler('hw_bot.log')
+filehandler = logging.FileHandler('hw_bot.log', mode='w')
 streamhandler = logging.StreamHandler(stream=sys.stdout)
 formatter = logging.Formatter(
     '%(asctime)s, %(levelname)s, %(message)s, %(name)s, %(funcName)s'
@@ -42,17 +42,12 @@ logger.addHandler(filehandler)
 
 def check_tokens():
     """Проверка доступности переменных окружения."""
-    environment_variables = [
+    return all([
         PRACTICUM_TOKEN,
         TELEGRAM_TOKEN,
         TELEGRAM_CHAT_ID,
         ENDPOINT
-    ]
-    if not all(environment_variables):
-        print('Отсутствуют переменные окружения')
-        return False
-    else:
-        return True
+    ])
 
 
 def send_message(bot, message):
@@ -69,39 +64,55 @@ def send_message(bot, message):
 
 def get_api_answer(timestamp):
     """Запрос к единственному эндпоинту."""
+    new_timestamp = timestamp or int(time.time())
+    request_parameters = {
+        'url': ENDPOINT,
+        'headers': HEADERS,
+        'params': {'from_date': new_timestamp},
+    }
     try:
-        logger.info(f'Отправка запроса API {ENDPOINT}, время {timestamp}')
-        response = requests.get(
-            ENDPOINT,
-            headers=HEADERS,
-            params={'from_date': timestamp}
-        )
+        logger.info('Отправка запроса API '
+                    'url = {url}, '
+                    'время {params}'.format(**request_parameters)
+                    )
+        response = requests.get(**request_parameters)
         if response.status_code != HTTPStatus.OK:
-            logger.error(f'API недоступен, код ответа: {response.status_code}')
-            raise StatusCodeError(f'API недоступен, код ответа: '
-                                  f'{response.status_code}'
+            raise StatusCodeError('Недоступен API '
+                                  'по параметрам url = {url}, '
+                                  'headers = {headers}, '
+                                  'params = {params}'
+                                  .format(**request_parameters)
                                   )
+        logger.info(f'Получен ответ от API с кодом {response.status_code}')
         return response.json()
     except Exception as error:
+        logger.error(
+            'Ошибка при запросе к API '
+            'по параметрам url = {url}, '
+            'headers = {headers}, '
+            'params = {params}'.format(**request_parameters)
+        )
         raise AnswerError('Ошибка при запросе к API', error)
 
 
 def check_response(response):
     """Проверка ответа API на соответствие документации."""
+    logger.info('Попытка проверить ответ API')
     if not isinstance(response, dict):
         raise TypeError('Ответ API не является словарем')
     if 'homeworks' not in response or 'current_date' not in response:
-        raise Exception
+        raise KeyError
     homeworks = response.get('homeworks')
     if not isinstance(homeworks, list):
         raise TypeError('Homeworks не является списком')
+    logger.info('Ответ API успешно проверен')
     return homeworks
 
 
 def parse_status(homework):
     """Извлекаем статус работы."""
+    logger.info('Попытка извлечь статус домашней работы')
     if 'homework_name' not in homework:
-        logger.error('Отсутствует имя HW в ответе API')
         raise ParseError('В ответе API домашки нет ключа homework_name')
     homework_name = homework.get('homework_name')
     sprint_name = homework.get('lesson_name')
@@ -114,6 +125,7 @@ def parse_status(homework):
             'API возвращает недокументированный статус домашней работы'
         )
     verdict = HOMEWORK_VERDICTS[homework_status]
+    logger.info('Получен статус домашней работы')
     return (f'Изменился статус проверки работы "{homework_name}"'
             f' ({sprint_name}). {verdict}'
             )
@@ -121,7 +133,7 @@ def parse_status(homework):
 
 def main():
     """Основная логика работы бота."""
-    if check_tokens() is False:
+    if not check_tokens():
         notification = 'Отсутствуют переменные окружения'
         logger.critical(notification)
         sys.exit(notification)
@@ -131,7 +143,7 @@ def main():
     while True:
         try:
             response = get_api_answer(timestamp)
-            timestamp = response.get('current_data')
+            timestamp = response.get('current_data', int(time.time()))
             homework = check_response(response)
             if homework:
                 message = parse_status(homework[0])
